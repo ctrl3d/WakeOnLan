@@ -1,10 +1,6 @@
-#if USE_UNITASK
-using Cysharp.Threading.Tasks;
-#else
 using System.Threading.Tasks;
-using Task = System.Threading.Tasks.Task;
-#endif
 using System;
+using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -60,11 +56,7 @@ namespace work.ctrl3d
         /// <exception cref="ArgumentOutOfRangeException"><paramref name="port"/> is outside the range 1-65535</exception>
         /// <exception cref="ArgumentException">A subnet mask was given with a non-IPv4 address</exception>
         /// <exception cref="InvalidOperationException">Failed to send magic packet</exception>
-        #if USE_UNITASK
-        public static async UniTask SendMagicPacketAsync(string macAddress, string ipAddress = null, string subnetMask = null, int port = 9)
-        #else
         public static async Task SendMagicPacketAsync(string macAddress, string ipAddress = null, string subnetMask = null, int port = 9)
-        #endif
         {
             var (packet, endPoint) = BuildPacketAndEndpoint(macAddress, ipAddress, subnetMask, port);
             await SendPacketAsync(packet, endPoint).ConfigureAwait(false);
@@ -220,7 +212,7 @@ namespace work.ctrl3d
 
             for (var i = 0; i < broadcastBytes.Length; i++)
             {
-                broadcastBytes[i] = (byte)(ipBytes[i] ^ 0xFF);
+                broadcastBytes[i] = (byte)(ipBytes[i] | ~maskBytes[i]);
             }
 
             return new IPAddress(broadcastBytes);
@@ -426,12 +418,11 @@ namespace work.ctrl3d
         /// </summary>
         private static void SendRawFrame(byte[] frame)
         {
-            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.Udp);
-            socket.EnableBroadcast = true;
+            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.IP);
 
             try
             {
-                socket.SendTo(frame, frame.Length, SocketFlags.None, endPoint: null);
+                socket.SendTo(frame, SocketFlags.None, new IPEndPoint(IPAddress.Broadcast, 0));
             }
             catch (SocketException ex)
             {
@@ -444,12 +435,11 @@ namespace work.ctrl3d
         /// </summary>
         private static async Task SendRawFrameAsync(byte[] frame)
         {
-            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.Udp);
-            socket.EnableBroadcast = true;
+            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.IP);
 
             try
             {
-                await socket.SendToAsync(frame, SocketFlags.None, endPoint: null).ConfigureAwait(false);
+                await socket.SendToAsync(new ArraySegment<byte>(frame), SocketFlags.None, new IPEndPoint(IPAddress.Broadcast, 0)).ConfigureAwait(false);
             }
             catch (SocketException ex)
             {

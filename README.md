@@ -160,10 +160,6 @@ await WakeOnLan.SendMagicPacketAsync("AA:BB:CC:DD:EE:FF");
 - `AA-BB-CC-DD-EE-FF` (하이픈 구분)
 - `AABBCCDDEEFF` (구분자 없음)
 
-### UniTask 지원
-
-UniTask를 사용하는 경우, 패키지의 Version Defines 기능을 통해 자동으로 `UniTask`를 사용합니다.
-
 ## API 참조
 
 ### SendMagicPacket (동기식)
@@ -244,7 +240,7 @@ public static async Task SendMagicPacketAsync(
 - `port` (int, 선택): WOL 포트 번호 (기본값: 9)
 
 **반환값:**
-- `Task` (또는 USE_UNITASK 정의 시 `UniTask`)
+- `Task` (반환 타입)
 
 **예외:**
 - `FormatException`: MAC 주소, IP 주소, 또는 서브넷 마스크 형식이 잘못된 경우

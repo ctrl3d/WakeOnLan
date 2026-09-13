@@ -160,21 +160,6 @@ The following MAC address formats are supported:
 - `AA-BB-CC-DD-EE-FF` (hyphen-separated)
 - `AABBCCDDEEFF` (no separator)
 
-### UniTask Support
-
-When using UniTask, the library automatically uses `UniTask` through the Version Defines feature.
-
-#### Automatic Setup (Recommended)
-
-If the UniTask package (`com.cysharp.unitask`) is installed in your project, the Version Defines feature automatically enables the `USE_UNITASK` symbol. No manual configuration is required.
-
-#### Manual Setup
-
-If needed, you can set it up manually:
-
-1. `Project Settings` → `Player` → `Other Settings` → `Scripting Define Symbols`
-2. Add `USE_UNITASK`
-
 ## API Reference
 
 ### SendMagicPacket (Synchronous)
@@ -255,7 +240,7 @@ public static async Task SendMagicPacketAsync(
 - `port` (int, optional): WOL port number (default: 9)
 
 **Returns:**
-- `Task` (or `UniTask` when USE_UNITASK is defined)
+- `Task` (return type)
 
 **Exceptions:**
 - `FormatException`: Invalid MAC address, IP address, or subnet mask format

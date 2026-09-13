@@ -2,7 +2,7 @@
   "name": "work.ctrl3d.wake-on-lan",
   "version": "1.0.0",
   "displayName": "WakeOnLan",
-  "description": "A Unity library for sending Wake-on-LAN magic packets to remotely wake up computers. Supports both synchronous and asynchronous APIs with optional UniTask integration.",
+  "description": "A Unity library for sending Wake-on-LAN magic packets to remotely wake up computers.",
   "unity": "2022.1",
   "documentationUrl": "https://ctrl3d.github.io/WakeOnLan",
   "changelogUrl": "https://github.com/ctrl3d/WakeOnLan/blob/main/CHANGELOG.md",

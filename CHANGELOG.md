@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- UniTask support (automatic detection via Version Defines)
+
 ## [1.0.0] - 2025-12-01
 
 ### Added
@@ -39,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic broadcast address calculation when subnet mask provided
 - Optional subnet mask (not required when IP address is specified)
 - 102-byte magic packet generation (6 bytes 0xFF + 16 repetitions of MAC address)
-- Zero external dependencies (UniTask is optional)
+- Zero external dependencies
 
 [Unreleased]: https://github.com/ctrl3d/WakeOnLan/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/ctrl3d/WakeOnLan/releases/tag/v1.0.0
