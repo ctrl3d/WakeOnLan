@@ -12,6 +12,7 @@ A Unity library for sending Wake-on-LAN (WOL) magic packets to wake up remote co
 
 - Asynchronous magic packet transmission (async/await)
 - Broadcast or subnet-specific packet transmission
+- **Automatic Wi-Fi detection** — Automatically distinguishes Ethernet/Wi-Fi interfaces and selects optimal transmission method
 - UniTask support (optional)
 - Unity 2022.1+ support
 
@@ -118,6 +119,38 @@ await WakeOnLan.SendMagicPacketAsync(
 - **MAC only**: Global broadcast (255.255.255.255) - sufficient for most cases
 - **MAC + IP**: Unicast to specific IP
 - **MAC + IP + Subnet**: Send to calculated subnet broadcast address
+
+### Wi-Fi Network Support (Wake-on-Wireless)
+
+This library automatically detects the currently connected network interface and selects the optimal transmission method.
+
+```csharp
+// Automatic Ethernet or Wi-Fi detection — no code changes needed
+await WakeOnLan.SendMagicPacketAsync("AA:BB:CC:DD:EE:FF");
+```
+
+**How it works:**
+
+| Network Type | Transmission Method | Description |
+|-------------|-------------------|-------------|
+| **Ethernet (wired)** | UDP broadcast | Existing `UdpClient` method (works in 99% of environments) |
+| **Wi-Fi (wireless)** | 802.11 Management Frame (Wake-on-Wireless) | Only works if Wi-Fi card supports WoW |
+
+**Wi-Fi requirements:**
+
+1. **Admin/root privileges required** — Wi-Fi transmission uses raw sockets, requiring admin/root privileges
+2. **Wi-Fi card support** — Only Intel, Qualcomm/Atheros some chipsets support Wake-on-Wireless (most Wi-Fi cards do not support WoW)
+3. **Same Wi-Fi network** — Wi-Fi transmission cannot cross routers (UDP broadcast can cross routers)
+
+**Supported platforms:**
+
+| Platform | Wi-Fi Transmission | Privileges |
+|----------|-------------------|------------|
+| Windows | ✅ | Administrator |
+| macOS | ✅ | root |
+| Linux | ✅ | `CAP_NET_RAW` |
+
+**Note:** If the Wi-Fi card does not support Wake-on-Wireless, the library automatically falls back to UDP broadcast.
 
 ### MAC Address Formats
 

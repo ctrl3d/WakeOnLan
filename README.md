@@ -12,6 +12,7 @@ Unity에서 Wake-on-LAN (WOL) 매직 패킷을 전송하여 원격 컴퓨터를 
 
 - 비동기 매직 패킷 전송 (async/await)
 - 브로드캐스트 또는 특정 서브넷으로 패킷 전송
+- **Wi-Fi 네트워크 자동 감지** — 이더넷/무선 인터페이스를 자동으로 구분하여 최적의 전송 방식 선택
 - UniTask 지원 (선택 사항)
 - Unity 2022.1 이상 지원
 
@@ -118,6 +119,38 @@ await WakeOnLan.SendMagicPacketAsync(
 - **MAC만**: 전체 브로드캐스트 (255.255.255.255) - 대부분의 경우 이것만으로 충분
 - **MAC + IP**: 특정 IP로 유니캐스트 전송
 - **MAC + IP + 서브넷**: 계산된 서브넷 브로드캐스트 주소로 전송
+
+### Wi-Fi 네트워크 지원 (Wake-on-Wireless)
+
+이 라이브러리는 현재 연결된 네트워크 인터페이스를 자동으로 감지하여 최적의 전송 방식을 선택합니다.
+
+```csharp
+// 이더넷 또는 Wi-Fi 네트워크 자동 감지 — 코드 변경 불필요
+await WakeOnLan.SendMagicPacketAsync("AA:BB:CC:DD:EE:FF");
+```
+
+**동작 방식:**
+
+| 네트워크 타입 | 전송 방식 | 설명 |
+|--------------|-----------|------|
+| **이더넷 (유선)** | UDP 브로드캐스트 | 기존 `UdpClient` 방식 (99% 환경에서 동작) |
+| **Wi-Fi (무선)** | 802.11 Management Frame (Wake-on-Wireless) | Wi-Fi 카드가 WoW를 지원해야 동작 |
+
+**Wi-Fi 지원 조건:**
+
+1. **관리자/root 권한 필요** — Wi-Fi 전송은 raw socket을 사용하므로 관리자 권한이 필요합니다
+2. **Wi-Fi 카드 지원** — Intel, Qualcomm/Atheros 일부 칩셋만 Wake-on-Wireless 지원 (대부분의 Wi-Fi 카드는 미지원)
+3. **같은 Wi-Fi 네트워크** — Wi-Fi 전송은 라우터를 넘을 수 없습니다 (UDP broadcast는 라우터 가능)
+
+**지원 플랫폼:**
+
+| 플랫폼 | Wi-Fi 전송 | 권한 |
+|--------|-----------|------|
+| Windows | ✅ | 관리자 |
+| macOS | ✅ | root |
+| Linux | ✅ | `CAP_NET_RAW` |
+
+**참고:** Wi-Fi 카드가 Wake-on-Wireless를 지원하지 않는 경우, UDP broadcast로 자동 폴백됩니다.
 
 ### MAC 주소 형식
 

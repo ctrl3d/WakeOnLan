@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using System;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 
@@ -274,6 +275,169 @@ namespace WakeOnLan.Tests
 
         #endregion
 
+        #region WoW Frame Structure Tests
+
+        [Test]
+        public void BuildWoWFrame_HasCorrectLength()
+        {
+            // Arrange
+            var macAddress = "AA:BB:CC:DD:EE:FF";
+
+            // Act
+            var wowFrame = BuildWoWFrameUsingReflection(macAddress);
+
+            // Assert
+            Assert.NotNull(wowFrame);
+            Assert.AreEqual(128, wowFrame.Length, "WoW frame should be 128 bytes (802.11 Management Frame)");
+        }
+
+        [Test]
+        public void BuildWoWFrame_HasCorrectFrameControl()
+        {
+            // Arrange
+            var macAddress = "AA:BB:CC:DD:EE:FF";
+
+            // Act
+            var wowFrame = BuildWoWFrameUsingReflection(macAddress);
+
+            // Assert
+            // Frame Control: Protocol version 0, Management frame (0), Wake-Up subtype (23)
+            // Frame Control = 0x0042 (little-endian: 0x42, 0x00)
+            Assert.AreEqual(0x00, wowFrame[0], "Frame Control byte 0 should be 0x00 (protocol version)");
+            Assert.AreEqual(0x42, wowFrame[1], "Frame Control byte 1 should be 0x42 (Management, Wake-Up subtype)");
+        }
+
+        [Test]
+        public void BuildWoWFrame_HasZeroDuration()
+        {
+            // Arrange
+            var macAddress = "AA:BB:CC:DD:EE:FF";
+
+            // Act
+            var wowFrame = BuildWoWFrameUsingReflection(macAddress);
+
+            // Assert
+            Assert.AreEqual(0x00, wowFrame[2], "Duration byte 0 should be 0x00");
+            Assert.AreEqual(0x00, wowFrame[3], "Duration byte 1 should be 0x00");
+        }
+
+        [Test]
+        public void BuildWoWFrame_PutsTargetMACAtOffset4()
+        {
+            // Arrange
+            var macAddress = "AA:BB:CC:DD:EE:FF";
+            var expectedMac = new byte[] { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF };
+
+            // Act
+            var wowFrame = BuildWoWFrameUsingReflection(macAddress);
+
+            // Assert
+            for (int i = 0; i < 6; i++)
+            {
+                Assert.AreEqual(expectedMac[i], wowFrame[4 + i], $"Destination MAC byte {i} should match");
+            }
+        }
+
+        [Test]
+        public void BuildWoWFrame_PutsSourceMACAtOffset10()
+        {
+            // Arrange
+            var macAddress = "AA:BB:CC:DD:EE:FF";
+
+            // Act
+            var wowFrame = BuildWoWFrameUsingReflection(macAddress);
+
+            // Assert
+            // Source MAC is at offset 10 (6 bytes)
+            var sourceMac = new byte[6];
+            Array.Copy(wowFrame, 10, sourceMac, 0, 6);
+            Assert.NotNull(sourceMac);
+            Assert.AreEqual(6, sourceMac.Length);
+        }
+
+        [Test]
+        public void BuildWoWFrame_PutsMagicPacketAtOffset24()
+        {
+            // Arrange
+            var macAddress = "AA:BB:CC:DD:EE:FF";
+
+            // Act
+            var wowFrame = BuildWoWFrameUsingReflection(macAddress);
+
+            // Assert
+            // Magic packet starts at offset 24 (802.11 header = 24 bytes)
+            Assert.AreEqual(0xFF, wowFrame[24], "Magic packet sync stream first byte should be 0xFF");
+
+            // Check 6 x 0xFF sync stream
+            for (int i = 0; i < 6; i++)
+            {
+                Assert.AreEqual(0xFF, wowFrame[24 + i], $"Sync stream byte {i} should be 0xFF");
+            }
+
+            // Check first MAC repetition
+            var expectedMac = new byte[] { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF };
+            for (int i = 0; i < 6; i++)
+            {
+                Assert.AreEqual(expectedMac[i], wowFrame[24 + 6 + i], $"First MAC repetition byte {i} should match");
+            }
+        }
+
+        [Test]
+        public void BuildWoWFrame_HasCorrectSequenceControl()
+        {
+            // Arrange
+            var macAddress = "AA:BB:CC:DD:EE:FF";
+
+            // Act
+            var wowFrame = BuildWoWFrameUsingReflection(macAddress);
+
+            // Assert
+            // Sequence Control: Fragment 0, Sequence Number 1
+            Assert.AreEqual(0x00, wowFrame[22], "Sequence Control byte 0 (fragment) should be 0x00");
+            Assert.AreEqual(0x10, wowFrame[23], "Sequence Control byte 1 (sequence) should be 0x10");
+        }
+
+        [Test]
+        public void BuildWoWFrame_PayloadMatchesMagicPacket()
+        {
+            // Arrange
+            var macAddress = "AA:BB:CC:DD:EE:FF";
+            var expectedMac = new byte[] { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF };
+
+            // Act
+            var wowFrame = BuildWoWFrameUsingReflection(macAddress);
+
+            // Assert - Check 16 MAC repetitions in payload (starting at offset 24)
+            for (int repetition = 0; repetition < 16; repetition++)
+            {
+                int offset = 24 + 6 + (repetition * 6);
+                for (int i = 0; i < 6; i++)
+                {
+                    Assert.AreEqual(expectedMac[i], wowFrame[offset + i],
+                        $"MAC repetition {repetition} in payload, byte {i} should match");
+                }
+            }
+        }
+
+        [Test]
+        public void BuildWoWFrame_BIsIDMatchesSourceMAC()
+        {
+            // Arrange
+            var macAddress = "AA:BB:CC:DD:EE:FF";
+
+            // Act
+            var wowFrame = BuildWoWFrameUsingReflection(macAddress);
+
+            // Assert
+            // BSSID (offset 16) should equal Source MAC (offset 10)
+            for (int i = 0; i < 6; i++)
+            {
+                Assert.AreEqual(wowFrame[10 + i], wowFrame[16 + i], $"BSSID byte {i} should equal Source MAC byte {i}");
+            }
+        }
+
+        #endregion
+
         #region Broadcast Address Calculation Tests
 
         [Test]
@@ -467,7 +631,7 @@ namespace WakeOnLan.Tests
         /// </summary>
         private static object InvokePrivateStatic(string methodName, params object[] args)
         {
-            var method = WakeOnLanType.GetMethod(methodName, BindingFlags.Public | BindingFlags.Static);
+            var method = WakeOnLanType.GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static);
 
             if (method == null)
                 throw new InvalidOperationException($"{methodName} method not found");
@@ -493,6 +657,14 @@ namespace WakeOnLan.Tests
             var macBytes = ParseMacAddressUsingReflection(macAddress);
 
             return (byte[])InvokePrivateStatic("CreateMagicPacket", macBytes);
+        }
+
+        private static byte[] BuildWoWFrameUsingReflection(string macAddress)
+        {
+            var macBytes = ParseMacAddressUsingReflection(macAddress);
+            var packet = CreateMagicPacketUsingReflection(macAddress);
+
+            return (byte[])InvokePrivateStatic("BuildWoWFrame", packet);
         }
 
         private static IPAddress GetBroadcastAddressUsingReflection(IPAddress ipAddress, IPAddress subnetMask)

@@ -6,6 +6,7 @@ using Task = System.Threading.Tasks.Task;
 #endif
 using System;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 
 namespace work.ctrl3d
@@ -15,6 +16,7 @@ namespace work.ctrl3d
         private const int MacByteCount = 6;
         private const int MacRepeatCount = 16;
         private const int PacketSize = MacByteCount + MacRepeatCount * MacByteCount; // 102
+        private const int WowFrameSize = 128; // 802.11 Management Frame (WoW)
 
         /// <summary>
         /// Sends a Wake-on-LAN magic packet synchronously.
@@ -37,18 +39,7 @@ namespace work.ctrl3d
         public static void SendMagicPacket(string macAddress, string ipAddress = null, string subnetMask = null, int port = 9)
         {
             var (packet, endPoint) = BuildPacketAndEndpoint(macAddress, ipAddress, subnetMask, port);
-
-            using var client = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
-            client.EnableBroadcast = true;
-
-            try
-            {
-                client.Send(packet, packet.Length, endPoint);
-            }
-            catch (SocketException ex)
-            {
-                throw new InvalidOperationException($"Failed to send Magic Packet (Code: {ex.SocketErrorCode})", ex);
-            }
+            SendPacket(packet, endPoint);
         }
 
         /// <summary>
@@ -76,18 +67,7 @@ namespace work.ctrl3d
         #endif
         {
             var (packet, endPoint) = BuildPacketAndEndpoint(macAddress, ipAddress, subnetMask, port);
-
-            using var client = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
-            client.EnableBroadcast = true;
-
-            try
-            {
-                await client.SendAsync(packet, packet.Length, endPoint).ConfigureAwait(false);
-            }
-            catch (SocketException ex)
-            {
-                throw new InvalidOperationException($"Failed to send Magic Packet (Code: {ex.SocketErrorCode})", ex);
-            }
+            await SendPacketAsync(packet, endPoint).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -259,6 +239,222 @@ namespace work.ctrl3d
             // i.e., ~mask & (~mask + 1) == 0  (lowest bit test)
             var inverted = ~maskInt;
             return (inverted & (inverted + 1)) == 0;
+        }
+
+        /// <summary>
+        /// Sends the magic packet using the appropriate method based on the current network interface.
+        /// Ethernet uses UDP broadcast (UdpClient). Wi-Fi uses 802.11 Management Frame (Wake-on-Wireless).
+        /// </summary>
+        private static void SendPacket(byte[] packet, IPEndPoint endPoint)
+        {
+            var interfaceType = GetActiveNetworkInterfaceType();
+
+            if (interfaceType == NetworkInterfaceType.Wireless80211)
+            {
+                SendViaWoW(packet, endPoint);
+            }
+            else
+            {
+                SendViaUdp(packet, endPoint);
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously sends the magic packet using the appropriate method based on the current network interface.
+        /// </summary>
+        private static async Task SendPacketAsync(byte[] packet, IPEndPoint endPoint)
+        {
+            var interfaceType = GetActiveNetworkInterfaceType();
+
+            if (interfaceType == NetworkInterfaceType.Wireless80211)
+            {
+                await SendViaWoWAsync(packet, endPoint).ConfigureAwait(false);
+            }
+            else
+            {
+                await SendViaUdpAsync(packet, endPoint).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Gets the type of the currently active network interface (Ethernet or Wi-Fi).
+        /// Returns null if no active interface is found.
+        /// </summary>
+        private static NetworkInterfaceType? GetActiveNetworkInterfaceType()
+        {
+            var interfaces = NetworkInterface.GetAllNetworkInterfaces();
+            return interfaces
+                .Where(ni => ni.OperationalStatus == OperationalStatus.Up)
+                .FirstOrDefault(ni => ni.NetworkInterfaceType is NetworkInterfaceType.Ethernet or NetworkInterfaceType.Wireless80211)
+                ?.NetworkInterfaceType;
+        }
+
+        /// <summary>
+        /// Sends a magic packet via UDP (Ethernet).
+        /// </summary>
+        private static void SendViaUdp(byte[] packet, IPEndPoint endPoint)
+        {
+            using var client = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
+            client.EnableBroadcast = true;
+
+            try
+            {
+                client.Send(packet, packet.Length, endPoint);
+            }
+            catch (SocketException ex)
+            {
+                throw new InvalidOperationException($"Failed to send Magic Packet (Code: {ex.SocketErrorCode})", ex);
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously sends a magic packet via UDP (Ethernet).
+        /// </summary>
+        private static async Task SendViaUdpAsync(byte[] packet, IPEndPoint endPoint)
+        {
+            using var client = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
+            client.EnableBroadcast = true;
+
+            try
+            {
+                await client.SendAsync(packet, packet.Length, endPoint).ConfigureAwait(false);
+            }
+            catch (SocketException ex)
+            {
+                throw new InvalidOperationException($"Failed to send Magic Packet (Code: {ex.SocketErrorCode})", ex);
+            }
+        }
+
+        /// <summary>
+        /// Sends a Wake-on-Wireless (WoW) magic packet via 802.11 Management Frame.
+        /// Only works on Wi-Fi networks with supported hardware.
+        /// Requires admin/root privileges.
+        /// </summary>
+        private static void SendViaWoW(byte[] packet, IPEndPoint endPoint)
+        {
+            var wowFrame = BuildWoWFrame(packet);
+            SendRawFrame(wowFrame);
+        }
+
+        /// <summary>
+        /// Asynchronously sends a Wake-on-Wireless (WoW) magic packet via 802.11 Management Frame.
+        /// </summary>
+        private static async Task SendViaWoWAsync(byte[] packet, IPEndPoint endPoint)
+        {
+            var wowFrame = BuildWoWFrame(packet);
+            await SendRawFrameAsync(wowFrame).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Gets the sender's MAC address from the active network interface.
+        /// </summary>
+        private static byte[] GetSourceMac()
+        {
+            var iface = GetActiveNetworkInterface() ?? throw new PlatformNotSupportedException("No active network interface found.");
+            var physicalAddress = iface.GetPhysicalAddress();
+            return physicalAddress.GetAddressBytes();
+        }
+
+        /// <summary>
+        /// Gets the active network interface (Ethernet or Wi-Fi).
+        /// </summary>
+        private static NetworkInterface GetActiveNetworkInterface()
+        {
+            var interfaces = NetworkInterface.GetAllNetworkInterfaces();
+            return interfaces
+                .FirstOrDefault(ni => ni.OperationalStatus == OperationalStatus.Up &&
+                                     ni.NetworkInterfaceType is NetworkInterfaceType.Ethernet or NetworkInterfaceType.Wireless80211)
+                ?? throw new PlatformNotSupportedException("No active Ethernet or Wi-Fi interface found.");
+        }
+
+        /// <summary>
+        /// Builds an 802.11 Management Frame (Wake-on-Wireless) from the magic packet.
+        /// Frame structure:
+        /// - Frame Control (2 B): Management frame, Wake-Up subtype (0x0042)
+        /// - Duration (2 B): 0
+        /// - Destination MAC (6 B): Target computer's MAC
+        /// - Source MAC (6 B): Sender's MAC (auto-detected)
+        /// - BSSID (6 B): Same as source
+        /// - Sequence Control (2 B): Fragment 0, Sequence 1
+        /// - Payload (98 B): Magic packet
+        /// Total: 128 bytes
+        /// </summary>
+        private static byte[] BuildWoWFrame(byte[] packet)
+        {
+            var frame = new byte[WowFrameSize];
+            var sourceMac = GetSourceMac();
+
+            // Frame Control: Protocol version 0, Management frame type (0), Wake-Up subtype (23 = 0x17)
+            // Frame Control = 0x0042 (little-endian: 0x42, 0x00)
+            frame[0] = 0x00;
+            frame[1] = 0x42;
+
+            // Duration: 0
+            frame[2] = 0x00;
+            frame[3] = 0x00;
+
+            // Destination MAC (target)
+            Array.Copy(packet, 0, frame, 4, MacByteCount);
+
+            // Source MAC (sender)
+            Array.Copy(sourceMac, 0, frame, 10, MacByteCount);
+
+            // BSSID (access point, same as source)
+            Array.Copy(sourceMac, 0, frame, 16, MacByteCount);
+
+            // Sequence Control: Fragment 0, Sequence Number 1
+            frame[22] = 0x00;
+            frame[23] = 0x10;
+
+            // Payload: magic packet (starting at offset 24)
+            var payloadStart = 24;
+            new Span<byte>(frame, payloadStart, MacByteCount).Fill(0xFF);
+
+            var offset = payloadStart;
+            var macSpan = new Span<byte>(packet, 0, MacByteCount);
+            for (var repetition = 0; repetition < MacRepeatCount; repetition++, offset += MacByteCount)
+            {
+                macSpan.CopyTo(new Span<byte>(frame, offset, MacByteCount));
+            }
+
+            return frame;
+        }
+
+        /// <summary>
+        /// Sends a raw 802.11 Management Frame via raw socket.
+        /// Requires admin/root privileges.
+        /// </summary>
+        private static void SendRawFrame(byte[] frame)
+        {
+            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.Udp);
+            socket.EnableBroadcast = true;
+
+            try
+            {
+                socket.SendTo(frame, frame.Length, SocketFlags.None, endPoint: null);
+            }
+            catch (SocketException ex)
+            {
+                throw new InvalidOperationException($"Failed to send WoW Frame (Code: {ex.SocketErrorCode})", ex);
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously sends a raw 802.11 Management Frame via raw socket.
+        /// </summary>
+        private static async Task SendRawFrameAsync(byte[] frame)
+        {
+            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.Udp);
+            socket.EnableBroadcast = true;
+
+            try
+            {
+                await socket.SendToAsync(frame, SocketFlags.None, endPoint: null).ConfigureAwait(false);
+            }
+            catch (SocketException ex)
+            {
+                throw new InvalidOperationException($"Failed to send WoW Frame (Code: {ex.SocketErrorCode})", ex);
+            }
         }
     }
 }
