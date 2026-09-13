@@ -170,6 +170,37 @@ public static void SendMagicPacket(
 
 **Warning:** This method executes synchronously and blocks the calling thread.
 
+### TryParseMacAddress (Safe MAC Address Parsing)
+
+```csharp
+public static bool TryParseMacAddress(
+    string macAddress,
+    out byte[] macBytes
+)
+```
+
+**Parameters:**
+- `macAddress` (string): MAC address string
+- `macBytes` (byte[], out): Contains the 6-byte MAC address if parsing succeeded; otherwise, `null`
+
+**Returns:**
+- `true`: Parsing succeeded
+- `false`: Parsing failed (invalid format, too short/long, non-hex characters, etc.)
+
+**Description:**
+Parses a MAC address without throwing exceptions. Returns `false` instead of throwing on validation failure, making it safe to use without `try/catch`.
+
+```csharp
+if (WakeOnLan.TryParseMacAddress("AA:BB:CC:DD:EE:FF", out var mac))
+{
+    Debug.Log($"MAC: {string.Join(":", mac.Select(b => b.ToString("X2")))}");
+}
+else
+{
+    Debug.LogError("Invalid MAC address format");
+}
+```
+
 ### SendMagicPacketAsync (Asynchronous)
 
 ```csharp

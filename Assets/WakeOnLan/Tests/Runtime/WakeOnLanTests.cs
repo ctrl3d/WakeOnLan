@@ -2,7 +2,7 @@ using NUnit.Framework;
 using System;
 using System.Net;
 using System.Reflection;
-using work.ctrl3d;
+using System.Runtime.ExceptionServices;
 
 namespace WakeOnLan.Tests
 {
@@ -134,6 +134,68 @@ namespace WakeOnLan.Tests
             Assert.Throws<FormatException>(() =>
             {
                 CreateMagicPacketUsingReflection(macAddress);
+            });
+        }
+
+        [Test]
+        public void ParseMacAddress_WithNullMAC_ThrowsFormatException()
+        {
+            // Act & Assert
+            Assert.Throws<FormatException>(() =>
+            {
+                ParseMacAddressUsingReflection(null);
+            });
+        }
+
+        [Test]
+        public void ParseMacAddress_ReturnsExpectedBytes()
+        {
+            // Arrange
+            var expected = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x23 };
+
+            // Act
+            var macBytes = ParseMacAddressUsingReflection("DE:AD:BE:EF:01:23");
+
+            // Assert
+            Assert.AreEqual(expected, macBytes);
+        }
+
+        [Test]
+        public void ParseMacAddress_WithMixedSeparators_ParsesCorrectly()
+        {
+            // Arrange
+            var expected = new byte[] { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF };
+
+            // Act
+            var macBytes = ParseMacAddressUsingReflection("AA:BB-CC:DD-EE:FF");
+
+            // Assert
+            Assert.AreEqual(expected, macBytes);
+        }
+
+        [Test]
+        public void ParseMacAddress_WithIncompleteTrailingByte_ThrowsFormatException()
+        {
+            // Arrange - the final nibble has no partner
+            var macAddress = "AA:BB:CC:DD:EE:F";
+
+            // Act & Assert
+            Assert.Throws<FormatException>(() =>
+            {
+                ParseMacAddressUsingReflection(macAddress);
+            });
+        }
+
+        [Test]
+        public void ParseMacAddress_WithSeparatorInsideByte_ThrowsFormatException()
+        {
+            // Arrange - a separator splits the last byte in half
+            var macAddress = "AA:BB:CC:DD:EE:F:F";
+
+            // Act & Assert
+            Assert.Throws<FormatException>(() =>
+            {
+                ParseMacAddressUsingReflection(macAddress);
             });
         }
 
@@ -289,58 +351,158 @@ namespace WakeOnLan.Tests
             Assert.AreEqual(expected, result);
         }
 
+        [Test]
+        public void GetBroadcastAddress_WithIPv6Address_ThrowsArgumentException()
+        {
+            // Arrange - IPv6 has no broadcast address
+            var ip = IPAddress.Parse("fe80::1");
+            var subnet = IPAddress.Parse("ffff:ffff:ffff:ffff::");
+
+            // Act & Assert
+            Assert.Throws<ArgumentException>(() =>
+            {
+                GetBroadcastAddressUsingReflection(ip, subnet);
+            });
+        }
+
+        [Test]
+        public void GetBroadcastAddress_WithMismatchedFamilies_ThrowsArgumentException()
+        {
+            // Arrange
+            var ip = IPAddress.Parse("192.168.1.100");
+            var subnet = IPAddress.Parse("ffff:ffff:ffff:ffff::");
+
+            // Act & Assert
+            Assert.Throws<ArgumentException>(() =>
+            {
+                GetBroadcastAddressUsingReflection(ip, subnet);
+            });
+        }
+
+        #endregion
+
+        #region Endpoint Resolution Tests
+
+        [Test]
+        public void ResolveEndPoint_WithNoIP_UsesGlobalBroadcast()
+        {
+            // Act
+            var endPoint = ResolveEndPointUsingReflection(null, null, 9);
+
+            // Assert
+            Assert.AreEqual(IPAddress.Broadcast, endPoint.Address);
+            Assert.AreEqual(9, endPoint.Port);
+        }
+
+        [Test]
+        public void ResolveEndPoint_WithIPOnly_UsesUnicast()
+        {
+            // Act
+            var endPoint = ResolveEndPointUsingReflection("192.168.1.42", null, 9);
+
+            // Assert
+            Assert.AreEqual(IPAddress.Parse("192.168.1.42"), endPoint.Address);
+        }
+
+        [Test]
+        public void ResolveEndPoint_WithIPAndSubnetMask_UsesDirectedBroadcast()
+        {
+            // Act
+            var endPoint = ResolveEndPointUsingReflection("192.168.1.42", "255.255.255.0", 7);
+
+            // Assert
+            Assert.AreEqual(IPAddress.Parse("192.168.1.255"), endPoint.Address);
+            Assert.AreEqual(7, endPoint.Port);
+        }
+
+        [Test]
+        public void ResolveEndPoint_WithInvalidIP_ThrowsFormatException()
+        {
+            // Act & Assert
+            Assert.Throws<FormatException>(() =>
+            {
+                ResolveEndPointUsingReflection("not-an-ip", null, 9);
+            });
+        }
+
+        [Test]
+        public void ResolveEndPoint_WithInvalidSubnetMask_ThrowsFormatException()
+        {
+            // Act & Assert
+            Assert.Throws<FormatException>(() =>
+            {
+                ResolveEndPointUsingReflection("192.168.1.42", "not-a-mask", 9);
+            });
+        }
+
+        [Test]
+        public void ResolveEndPoint_WithZeroPort_ThrowsArgumentOutOfRangeException()
+        {
+            // Act & Assert
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                ResolveEndPointUsingReflection(null, null, 0);
+            });
+        }
+
+        [Test]
+        public void ResolveEndPoint_WithPortAboveMax_ThrowsArgumentOutOfRangeException()
+        {
+            // Act & Assert
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+            {
+                ResolveEndPointUsingReflection(null, null, 65536);
+            });
+        }
+
         #endregion
 
         #region Helper Methods - Using Reflection to Access Private Methods
 
-        private byte[] CreateMagicPacketUsingReflection(string macAddress)
+        private static readonly Type WakeOnLanType = typeof(work.ctrl3d.WakeOnLan);
+
+        /// <summary>
+        /// Invokes a private static method on the production type, re-throwing the original
+        /// exception instead of the <see cref="TargetInvocationException"/> reflection wraps it in.
+        /// </summary>
+        private static object InvokePrivateStatic(string methodName, params object[] args)
         {
-            // Parse MAC address to get macBytes
-            var macBytes = new byte[6];
-            var byteIndex = 0;
-
-            for (var i = 0; i < macAddress.Length; i++)
-            {
-                var c = macAddress[i];
-
-                if (c is ':' or '-') continue;
-
-                if (byteIndex >= 6)
-                    throw new FormatException("MAC address length is too long.");
-
-                if (i + 1 >= macAddress.Length)
-                    throw new FormatException("Invalid MAC address format (last byte incomplete).");
-
-                var hexPair = macAddress.Substring(i, 2);
-                macBytes[byteIndex] = Convert.ToByte(hexPair, 16);
-
-                byteIndex++;
-                i++;
-            }
-
-            if (byteIndex != 6)
-                throw new FormatException(
-                    $"MAC address length is too short ({byteIndex} bytes found, 6 bytes required).");
-
-            // Call private CreateMagicPacket method
-            var type = typeof(work.ctrl3d.WakeOnLan);
-            var method = type.GetMethod("CreateMagicPacket", BindingFlags.NonPublic | BindingFlags.Static);
+            var method = WakeOnLanType.GetMethod(methodName, BindingFlags.Public | BindingFlags.Static);
 
             if (method == null)
-                throw new InvalidOperationException("CreateMagicPacket method not found");
+                throw new InvalidOperationException($"{methodName} method not found");
 
-            return (byte[])method.Invoke(null, new object[] { macBytes });
+            try
+            {
+                return method.Invoke(null, args);
+            }
+            catch (TargetInvocationException ex) when (ex.InnerException != null)
+            {
+                ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                throw; // Unreachable, but required by the compiler.
+            }
         }
 
-        private IPAddress GetBroadcastAddressUsingReflection(IPAddress ipAddress, IPAddress subnetMask)
+        private static byte[] ParseMacAddressUsingReflection(string macAddress)
         {
-            var type = typeof(work.ctrl3d.WakeOnLan);
-            var method = type.GetMethod("GetBroadcastAddress", BindingFlags.NonPublic | BindingFlags.Static);
+            return (byte[])InvokePrivateStatic("ParseMacAddress", macAddress);
+        }
 
-            if (method == null)
-                throw new InvalidOperationException("GetBroadcastAddress method not found");
+        private static byte[] CreateMagicPacketUsingReflection(string macAddress)
+        {
+            var macBytes = ParseMacAddressUsingReflection(macAddress);
 
-            return (IPAddress)method.Invoke(null, new object[] { ipAddress, subnetMask });
+            return (byte[])InvokePrivateStatic("CreateMagicPacket", macBytes);
+        }
+
+        private static IPAddress GetBroadcastAddressUsingReflection(IPAddress ipAddress, IPAddress subnetMask)
+        {
+            return (IPAddress)InvokePrivateStatic("GetBroadcastAddress", ipAddress, subnetMask);
+        }
+
+        private static IPEndPoint ResolveEndPointUsingReflection(string ipAddress, string subnetMask, int port)
+        {
+            return (IPEndPoint)InvokePrivateStatic("ResolveEndPoint", ipAddress, subnetMask, port);
         }
 
         #endregion

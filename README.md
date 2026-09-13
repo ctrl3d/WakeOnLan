@@ -159,6 +159,37 @@ public static void SendMagicPacket(
 
 **주의:** 이 메서드는 동기식으로 실행되어 호출 스레드를 블로킹합니다.
 
+### TryParseMacAddress (안전한 MAC 주소 파싱)
+
+```csharp
+public static bool TryParseMacAddress(
+    string macAddress,
+    out byte[] macBytes
+)
+```
+
+**매개변수:**
+- `macAddress` (string): MAC 주소 문자열
+- `macBytes` (byte[], out): 파싱에 성공하면 6바이트 MAC 주소; 실패하면 `null`
+
+**반환값:**
+- `true`: 파싱 성공
+- `false`: 파싱 실패 (잘못된 형식, 너무 짧음/김, 비 hex 문자 등)
+
+**설명:**
+예외를 던지지 않고 MAC 주소를 파싱합니다. 유효성 검사가 실패해도 예외 대신 `false`를 반환하므로 `try/catch` 없이 안전하게 사용할 수 있습니다.
+
+```csharp
+if (WakeOnLan.TryParseMacAddress("AA:BB:CC:DD:EE:FF", out var mac))
+{
+    Debug.Log($"MAC: {string.Join(":", mac.Select(b => b.ToString("X2")))}");
+}
+else
+{
+    Debug.LogError("잘못된 MAC 주소 형식");
+}
+```
+
 ### SendMagicPacketAsync (비동기)
 
 ```csharp
